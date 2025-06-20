@@ -27,8 +27,7 @@ class GeneralBot(commands.Bot):
     def __init__(self):
         super().__init__(
             command_prefix=config.BOT_PREFIX,
-            intents=discord.Intents.all(),
-            application_id=config.APPLICATION_ID)
+            intents=discord.Intents.all())
 
         self.session = None
         self.initial_extensions = []
@@ -71,19 +70,20 @@ bot = GeneralBot()
 # 992669093545136189
 @bot.command(name='gsync')
 async def _gsync(ctx):
-        guilds = [626078288556851230, 601677205445279744]
+        guilds = [601677205445279744, 771099589713199145]
         synced_guilds = []
         for g in guilds:
             try:
-                guild = discord.Guild
+                guild = await bot.get_guild(g)
                 synced_guilds.append(f"{guild.name}\n{g}")
+                print(guild.get_user(int(ctx.guild.owner.id)))
                 await bot.tree.sync(guild=discord.Object(id=g))
                 print(f"{g} was synced....")
             except Exception as err:
                 print(f"Skipped {g} for error: {err}")
-
-                return
+                continue
         print(f"Guilds have been synced")
+
 
 
 # Error handling in chat

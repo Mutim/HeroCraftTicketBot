@@ -8,10 +8,6 @@ from discord import app_commands, ui
 from discord.ui import View
 from discord.ext import commands
 
-db_client = MONGO_CLIENT
-message_db = db_client.Messages
-user_db = db_client.Users
-
 # TODO: Add button to tickets channel that calls the TicketView() class.
 
 
@@ -43,8 +39,8 @@ class ButtonView(View):
         await itx.response.edit_message(view=self)
 
     async def interaction_check(self, interaction):
-        role_ids = [992669093545136189, 992670439644090428,
-                    992664721125806191, 992671030143352912]
+        role_ids = [992669093545136189, 992671194186780732,
+                    992671391289704468, 992675253736198284]
         for role_id in role_ids:
             if interaction.user.get_role(role_id):
                 return True
@@ -60,8 +56,8 @@ class ButtonView(View):
         custom_id="1")
     async def close_callback(self, itx: discord.Interaction, button):
 
-        role_ids = [992669093545136189, 992670439644090428,
-                    992664721125806191, 992671030143352912]
+        role_ids = [992669093545136189, 992671194186780732,
+                    992671391289704468, 992675253736198284]
         member = itx.user
         for role_id in role_ids:
             if member.get_role(role_id):
@@ -149,28 +145,33 @@ class TicketForm(ui.Modal, title="Submit your Ticket"):
     async def on_submit(self, itx: discord.Interaction):
         ticket_number = uuid.uuid1()
         role_ping = {
-            "Bug": "992672222399434822",
-            "Player": "992671194186780732",
+            "Bug": "992669093545136189",
+            "Player": "992669093545136189",
             "Store": "992671194186780732",
-            "Appeal": "992671030143352912",
-            "Staff": "993412996527300649",
+            "Appeal": "992671194186780732",
+            "Staff": "992671391289704468",
             "Other": "992671391289704468"
         }
 
         dynamic_role = itx.user.guild.get_role(
             int(role_ping[self.ticket_name]))
         # Staff roles in order:          Mod Management, Sr Mod, Mod, Helper, Dev
-        staff_roles = [993412996527300649, 992671030143352912,
-                       992671194186780732, 992671391289704468, 992672222399434822]
+
+        staff_roles = [992669093545136189, 992671194186780732,
+                       992671391289704468, 771099590032097343]
 
         new_overwrites = {}
 
         view_roles = []
-        for role in staff_roles[:staff_roles.index(dynamic_role.id) + 1]:
-            view_roles.append(f"<@&{role}>")
+        try:
+            for role in staff_roles:
+                if itx.guild.get_role(role):
+                    view_roles.append(f"<@&{role}>")
+        except AttributeError as err:
+            print(err)
 
         embed = discord.Embed(
-            title=f"<:support_ticket:965647477548138566> Support Ticket - [{self.ticket_name}]",
+            title=f"<:support_ticket:996549597042315375> Support Ticket - [{self.ticket_name}]",
             description=f"Thank you for opening a support ticket, {itx.user}.\n"
                         f"A member <@&{role_ping[self.ticket_name]}> will be available to help you shortly.\n"
                         f"These roles have access to view this ticket: {view_roles}",
@@ -182,7 +183,7 @@ class TicketForm(ui.Modal, title="Submit your Ticket"):
         embed.set_footer(
             text=f"User ID: {itx.user.id} | Ticket Number • {ticket_number}")
 
-        for role in staff_roles[:staff_roles.index(dynamic_role.id) + 1]:
+        for role in staff_roles:
             appended_role = itx.user.guild.get_role(int(role))
 
             new_overwrites.update({appended_role: discord.PermissionOverwrite(
@@ -195,8 +196,8 @@ class TicketForm(ui.Modal, title="Submit your Ticket"):
             )})
 
         overwrites = {
-            itx.user.guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            itx.user.guild.me: discord.PermissionOverwrite(read_messages=True),
+            itx.client.get_guild(601677205445279744).default_role: discord.PermissionOverwrite(read_messages=False),
+            itx.client.get_guild(601677205445279744).me: discord.PermissionOverwrite(read_messages=True),
             # User roles
             itx.user: discord.PermissionOverwrite(
                 read_messages=True,
@@ -205,20 +206,24 @@ class TicketForm(ui.Modal, title="Submit your Ticket"):
                 send_messages=True,
                 use_application_commands=False,
                 attach_files=True),
-            # Staff roles
-            dynamic_role: discord.PermissionOverwrite(
-                read_messages=True,
-                add_reactions=True,
-                read_message_history=True,
-                send_messages=True,
-                use_application_commands=False,
-                attach_files=True,
-            )
+            # # Staff roles
+            # dynamic_role: discord.PermissionOverwrite(
+            #     read_messages=True,
+            #     add_reactions=True,
+            #     read_message_history=True,
+            #     send_messages=True,
+            #     use_application_commands=False,
+            #     attach_files=True,
+            # )
         }
-        channel = await itx.user.guild.get_channel(985201287488499752).create_text_channel(
+        channel = itx.client.get_guild(601677205445279744).get_channel(985201287488499752)
+        print(channel)
+        channel_text = await itx.client.get_guild(601677205445279744).get_channel(985201287488499752).create_text_channel(
             f'{self.ticket_name.lower()} Ticket - {itx.user.name}', overwrites=overwrites)
+        await itx.response.send_message(f"Your ticket has been created at {channel_text.mention}!", ephemeral=True)
 
-        await itx.response.send_message(f"Your ticket has been created at {channel.mention}!", ephemeral=True)
+        channel = itx.client.get_guild(601677205445279744).get_channel(channel_text.id)
+
         message = await channel.send(
             content=f"The <@&{role_ping[self.ticket_name]}> team has been notified, {itx.user}.",
             embed=embed,
@@ -243,14 +248,14 @@ class TicketReason(ui.Modal, title="Reason for Closing Ticket"):
 
     async def on_submit(self, itx: discord.Interaction):
         embed = discord.Embed(
-            title=f"<:support_ticket:965647477548138566> Support Ticket Closed - [{self.ticket_name}]",
+            title=f"<:support_ticket:996549597042315375> Support Ticket Closed - [{self.ticket_name}]",
             description=f"Ticket has been successfully closed by {self.admin_name}",
             color=config.success)
         embed.add_field(name=f"Reason", value=f"{self.reason}", inline=False)
         embed.set_footer(
             text=f"User ID: {itx.user.id} | iID:  • {time.ctime(time.time())}")
 
-        admin_channel = itx.client.get_channel(626086306606350366)
+        admin_channel = itx.client.get_channel(743476824763269150)
         try:
             await itx.response.defer()
             await admin_channel.send(embed=embed)
@@ -287,7 +292,7 @@ class Tickets(commands.Cog, name="ticket"):
 
         async def interaction_check(interaction) -> bool:
             member = interaction.user
-            if not member.get_role(993282351637483621):
+            if not member.get_role(1007407892925788260):
                 return True
             else:
                 interaction.response.send_message(
@@ -309,7 +314,7 @@ async def setup(bot: commands.Bot):
     await bot.add_cog(
         Tickets(bot),
         guilds=[
-            discord.Object(id=626078288556851230),
+            discord.Object(id=771099589713199145),
             discord.Object(id=601677205445279744)
         ]
     )

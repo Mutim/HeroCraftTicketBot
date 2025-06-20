@@ -36,9 +36,11 @@ class UnderReview(View):
         self.suggestion = suggestion
 
     async def interaction_check(self, itx):
-        if itx.user.get_role(992672581415084032).id in config.SUGGESTION_ROLES:
-
-            return True
+        member_roles = itx.user.roles
+        print(member_roles)
+        for role in member_roles:
+            if role.id in config.SUGGESTION_ROLES:
+                return True
 
     @discord.ui.button(
         label="[Under Review]",
@@ -79,9 +81,12 @@ class ApproveDeny(View):
         self.suggestion_title = suggestion_title
         self.suggestion = suggestion
 
-    async def interaction_check(self, interaction):
-        if interaction.user.get_role(992672581415084032).id in config.SUGGESTION_ROLES:
-            return True
+    async def interaction_check(self, itx):
+        member_roles = itx.user.roles
+        print(member_roles)
+        for role in member_roles:
+            if role.id in config.SUGGESTION_ROLES:
+                return True
 
     @discord.ui.button(
         label="[Approved]",
@@ -104,7 +109,7 @@ class ApproveDeny(View):
     async def design_callback(self, itx: discord.Interaction, button):
         await itx.response.edit_message(view=Finalize(suggestion_title=self.suggestion_title))
         embed = discord.Embed(
-            title=f"Adriftus Suggestion Bot",
+            title=f"HeroCraft Suggestion Bot",
             description=f"○○ {itx.user.mention} has moved a suggestion to internal design ○○",
             color=config.success)
         embed.set_thumbnail(url=itx.user.avatar)
@@ -112,8 +117,8 @@ class ApproveDeny(View):
         embed.add_field(name=f"Suggestion", value=f"{self.suggestion}", inline=False)
         embed.set_footer(text=f"User ID: {itx.user.id} | {time.ctime(time.time())}")
 
-        channel = itx.client.get_guild(626078288556851230).get_channel(669922990435336216)
-        await itx.channel.send(f"This suggestion has been sent to <#669922990435336216>")
+        channel = itx.client.get_guild(601677205445279744).get_channel(1235231386374504509)
+        await itx.channel.send(f"This suggestion has been sent to <#1235231386374504509>")
         try:
             await itx.channel.edit(
                 name=f"[Internal Design] - {self.suggestion_title}",
@@ -163,9 +168,14 @@ class Finalize(View):
         super().__init__(timeout=None)
         self.suggestion_title = suggestion_title
 
-    async def interaction_check(self, interaction):
-        if interaction.user.get_role(992672581415084032).id in config.SUGGESTION_ROLES:
-            return True
+    async def interaction_check(self, itx):
+        member_roles = itx.user.roles
+        print(member_roles)
+        for role in member_roles:
+            if role.id in config.SUGGESTION_ROLES:
+                return True
+        # if interaction.user.get_role(992669093545136189).id in config.SUGGESTION_ROLES:
+        #     return True
 
     @discord.ui.button(
         label="[Finalize]",
@@ -266,7 +276,7 @@ class SuggestionForm(ui.Modal, title="Suggestions Form"):
 
     async def on_submit(self, itx: discord.Interaction):
         embed = discord.Embed(
-            title=f"Adriftus Suggestion Bot",
+            title=f"HeroCraft Suggestion Bot",
             description=f"○○ {itx.user.mention} has dropped a suggestion! ○○",
             color=config.success)
         embed.set_thumbnail(url=itx.user.avatar)
@@ -280,15 +290,15 @@ class SuggestionForm(ui.Modal, title="Suggestions Form"):
 
         message = await channel.send(embed=embed)
 
-        await message.add_reaction("<:knightup:548680151882399745>")
-        await message.add_reaction("<:knightdown:550025111235985410>")
+        await message.add_reaction("<:upvote:1026235143435857930>")
+        await message.add_reaction("<:downvote:1026235141959467039>")
         thread = await message.create_thread(
             name=f"[Pending] - {self.sug_title}",
             slowmode_delay=None,
             reason="Suggestion Created")
 
         welcome_message = await thread.send(f"Thank you for the suggestion {itx.user.mention}!\n "
-                                            f"Members of <@&992672581415084032> will review this suggestion shortly.")
+                                            f"Members of <@&992669093545136189> will review this suggestion shortly.")
         await welcome_message.pin()
         await thread.send(view=UnderReview(suggestion_title=self.sug_title, suggestion=self.suggestion))
 
@@ -325,6 +335,7 @@ async def setup(bot: commands.Bot):
     await bot.add_cog(
         Suggest(bot),
         guilds=[
+            discord.Object(id=771099589713199145),
             discord.Object(id=601677205445279744)
         ]
     )

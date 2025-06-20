@@ -26,7 +26,7 @@ class Staff(commands.Cog, name="staff"):
         not know the changes until then.
     """
 
-    @app_commands.checks.has_any_role(992669093545136189, 976324993229139999)  # Role IDs for Administrator in Staff Discord
+    @app_commands.checks.has_any_role(992669093545136189, 771099590032097343)  # Role IDs for Administrator in Staff Discord
     @app_commands.checks.cooldown(1, 10.0, key=lambda i: (i.guild_id, i.user.id))
     @app_commands.command(
         name="creload",
@@ -67,7 +67,7 @@ class Staff(commands.Cog, name="staff"):
         if isinstance(error, app_commands.MissingRole):
             await itx.response.send_message("You do not have permission to run this command!", ephemeral=True)
 
-    @app_commands.checks.has_any_role(992669093545136189, 976324993229139999)  # Role IDs for Administrator in Staff Discord
+    @app_commands.checks.has_any_role(992669093545136189)  # Role IDs for Administrator in Staff Discord
     @app_commands.checks.cooldown(1, 10.0, key=lambda i: (i.guild_id, i.user.id))
     @app_commands.command(
         name="gsync",
@@ -78,7 +78,7 @@ class Staff(commands.Cog, name="staff"):
         """
         Guild Sync Command
         """
-        guilds = [626078288556851230, 601677205445279744]
+        guilds = [601677205445279744, 771099589713199145]
         synced_guilds = []
         try:
             for g in guilds:
@@ -164,7 +164,7 @@ async def setup(bot: commands.Bot):
     await bot.add_cog(
         Staff(bot),
         guilds=[
-            discord.Object(id=626078288556851230),
+            discord.Object(id=771099589713199145),
             discord.Object(id=601677205445279744)
         ]
     )

@@ -194,19 +194,20 @@ class Moderation(commands.Cog, name="moderation"):
                 return
 
             purged_messages = await itx.channel.purge(limit=amount+1)
+            print(f"Purged {len(purged_messages)} messages")
             embed = discord.Embed(
                 title="Chat Cleared!",
                 description=f"**{itx.user}** cleared **{len(purged_messages)-1}** messages!",
                 color=config.success
             )
-            await itx.response.send_message(embed=embed)
+            await itx.followup.send(embed=embed, ephemeral=True)
         except ValueError as err:
             embed = discord.Embed(
                 title="Error!",
                 description=f"`{err}",
                 color=config.error
             )
-            await itx.response.send_message(embed=embed)
+            await itx.followup.send(embed=embed, ephemeral=True)
             return
 
 
@@ -214,7 +215,7 @@ async def setup(bot: commands.Bot):
     await bot.add_cog(
         Moderation(bot),
         guilds=[
-            discord.Object(id=626078288556851230),
+            discord.Object(id=771099589713199145),
             discord.Object(id=601677205445279744)
         ]
     )
