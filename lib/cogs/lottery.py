@@ -16,6 +16,7 @@ from lib.cogs.economy import EconomyUtils
 # Configuration Constants
 MAX_TICKETS_PER_USER = 5
 TICKET_PRICE = 100
+POT_MULTIPLIER = 2
 DRAWING_HOUR = 20  # 8 PM
 DRAWING_MINUTE = 0
 DAILY_INTERVAL = timedelta(days=1)
@@ -67,14 +68,11 @@ class LotteryView(View):
             except discord.NotFound:
                 pass
 
-    @discord.ui.button(label="Purchase Ticket", style=discord.ButtonStyle.green)
-    async def purchase_ticket(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(PurchaseTicketModal())
-
-    @discord.ui.button(label="Quick Pick", style=discord.ButtonStyle.blurple)
+    @discord.ui.button(label="Quick Pick", style=discord.ButtonStyle.green)
     async def quick_pick(self, interaction: discord.Interaction, button: Button):
         cog = self.cog
         user_id = interaction.user.id
+        user_balance = cog.economy.get_balance(user_id)
 
         if len(await cog.get_member_tickets(user_id)) >= MAX_TICKETS_PER_USER:
             return await interaction.response.send_message(
@@ -82,11 +80,14 @@ class LotteryView(View):
                 ephemeral=True
             )
 
-        if cog.economy.get_balance(user_id) < TICKET_PRICE:
+        if user_balance < TICKET_PRICE:
             return await interaction.response.send_message(
                 f"You need {TICKET_PRICE} coins to buy a ticket!",
                 ephemeral=True
             )
+
+        # Process payment first
+        cog.economy.update_balance(user_id, -TICKET_PRICE)
 
         new_ticket = {
             "numbers": sorted(random.sample(range(1, 71), 5)),
@@ -94,8 +95,35 @@ class LotteryView(View):
             "purchase_time": datetime.now(timezone.utc).isoformat()
         }
 
-        await cog._add_ticket(user_id, new_ticket)
-        await self._update_ui(interaction, new_ticket)
+        current_tickets = await cog.get_member_tickets(user_id)
+        current_tickets.append(new_ticket)
+        await cog.save_member_tickets(user_id, current_tickets)
+        cog.current_pot += TICKET_PRICE * POT_MULTIPLIER
+        cog.save_lottery_data()
+
+        await interaction.response.defer()
+
+        confirm_embed = discord.Embed(
+            title="🎫 Quick Pick Purchased!",
+            description=f"Added {TICKET_PRICE * POT_MULTIPLIER} coins to the pot",
+            color=discord.Color.green()
+        )
+        confirm_embed.add_field(
+            name="Your Numbers",
+            value=f"{', '.join(map(str, new_ticket['numbers']))} PB: {new_ticket['powerball']}\n\nCurrent Balance: {user_balance}"
+        )
+
+        main_embed = await cog.format_main_embed(user_id)
+        await interaction.edit_original_response(
+            embed=main_embed,
+            view=self
+        )
+
+        await interaction.followup.send(embed=confirm_embed, ephemeral=True)
+
+    @discord.ui.button(label="Manual Pick", style=discord.ButtonStyle.blurple)
+    async def purchase_ticket(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(PurchaseTicketModal())
 
     @discord.ui.button(label="My Tickets", style=discord.ButtonStyle.gray)
     async def show_tickets(self, interaction: discord.Interaction, button: Button):
@@ -114,7 +142,58 @@ class LotteryView(View):
         )
         view.message = await interaction.original_response()
 
+    @discord.ui.button(label="Show Odds", style=discord.ButtonStyle.red)
+    async def show_odds(self, interaction: discord.Interaction, button: Button):
+        """Show the odds and prize structure in a new embed"""
+        embed = discord.Embed(
+            title="📊 Mega Millions Odds & Prizes",
+            color=discord.Color.gold()
+        )
+
+        # Odds section
+        embed.add_field(
+            name="ODDS",
+            value=(
+                "Jackpot (5+PB): 1 in 302,575,350\n"
+                "Any Prize: 1 in 24.9\n"
+                "\n"
+                "*May the odds be ever in your favor*"
+            ),
+            inline=False
+        )
+
+        # Prize structure section
+        current_pot = self.cog.current_pot
+        prize_table = (
+            "```\n"
+            "┌───────────────────┬──────────────────┐\n"
+            "│      Matches      │      Payout      │\n"
+            "├───────────────────┼──────────────────┤\n"
+            f"│  5 + Powerball    │ {str(current_pot * 1.0) + ' coins':<16} │\n"
+            f"│  5 numbers        │ {str(round(current_pot * 0.5)) + ' coins':<16} │\n"
+            f"│  4 + Powerball    │ {str(round(current_pot * 0.4)) + ' coins':<16} │\n"
+            f"│  4 numbers        │ {str(round(current_pot * 0.3)) + ' coins':<16} │\n"
+            f"│  3 + Powerball    │ {str(round(current_pot * 0.25)) + ' coins':<16} │\n"
+            f"│  3 numbers        │ {str(round(current_pot * 0.2)) + ' coins':<16} │\n"
+            f"│  2 + Powerball    │ {str(round(current_pot * 0.15)) + ' coins':<16} │\n"
+            f"│  1 + Powerball    │ {str(round(current_pot * 0.1)) + ' coins':<16} │\n"
+            "└───────────────────┴──────────────────┘\n"
+            "```"
+        )
+
+        embed.add_field(
+            name="PRIZE STRUCTURE",
+            value=prize_table,
+            inline=False
+        )
+
+        embed.set_footer(text=f"Current pot: {current_pot:,} coins")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     async def _update_ui(self, interaction: discord.Interaction, new_ticket: dict):
+        user_id = interaction.user.id
+        user_balance = self.economy.get_balance(user_id)
         embed = discord.Embed(
             title="🎫 Quick Pick Ticket Purchased!",
             color=discord.Color.blue()
@@ -123,7 +202,7 @@ class LotteryView(View):
             name="Your Numbers",
             value=f"{', '.join(map(str, new_ticket['numbers']))} PB: {new_ticket['powerball']}"
         )
-        embed.set_footer(text=f"Added {TICKET_PRICE * self.cog.pot_multiplier} coins to the pot")
+        embed.set_footer(text=f"Added {TICKET_PRICE * POT_MULTIPLIER} coins to the pot\n\nCurrent Balance: {user_balance}")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
         await self._refresh_main_embed(interaction)
@@ -194,7 +273,6 @@ class MegaMillions(commands.Cog):
         self.bot = bot
         self.economy = economy_utils
         self.ticket_price = TICKET_PRICE
-        self.pot_multiplier = 2
         self.members_dir = Path("lib/members")
         self.lottery_data_file = Path("data/lottery_data/lottery_data.json")
         self.file_lock = asyncio.Lock()
@@ -212,12 +290,11 @@ class MegaMillions(commands.Cog):
         self.members_dir.mkdir(parents=True, exist_ok=True)
         self.lottery_data_file.parent.mkdir(parents=True, exist_ok=True)
 
-    async def _log_drawing_results(self, winners: List[Tuple], all_participants: Set[int]):
+    async def _log_drawing_results(self, winners: List[Tuple], participants_with_tickets: Dict[int, List[dict]]):
         """Save drawing results to daily JSON log file"""
         try:
             now = datetime.now(timezone.utc)
-            today_str = now.date().isoformat()
-            log_file = LOGS_DIR / LOG_FILE_FORMAT.format(date=today_str)
+            log_file = LOGS_DIR / LOG_FILE_FORMAT.format(date=now.date().isoformat())
             LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
             entry = {
@@ -229,11 +306,10 @@ class MegaMillions(commands.Cog):
                 "non_winners": []
             }
 
-            winning_users = set()
+            winning_user_ids = {user_id for user_id, *_ in winners}
             for user_id, matched, has_pb, tier in winners:
                 user = self.bot.get_user(user_id)
-                winning_users.add(user_id)
-                tickets = await self.get_member_tickets(user_id)
+                tickets = participants_with_tickets[user_id]
 
                 entry["winners"].append({
                     "user_id": user_id,
@@ -242,32 +318,19 @@ class MegaMillions(commands.Cog):
                     "had_powerball": has_pb,
                     "prize_tier": tier,
                     "prize_amount": self.current_pot * PRIZE_DISTRIBUTION[tier],
-                    "tickets": [
-                        {
-                            "numbers": t["numbers"],
-                            "powerball": t["powerball"],
-                            "purchase_time": t["purchase_time"]
-                        } for t in tickets
-                    ]
+                    "tickets": tickets
                 })
 
-            for user_id in set(all_participants) - winning_users:
-                user = self.bot.get_user(user_id)
-                tickets = await self.get_member_tickets(user_id)
-
-                entry["non_winners"].append({
-                    "user_id": user_id,
-                    "username": user.name if user else str(user_id),
-                    "tickets_purchased": len(tickets),
-                    "tickets": [
-                        {
-                            "numbers": t["numbers"],
-                            "powerball": t["powerball"],
-                            "purchase_time": t["purchase_time"]
-                        } for t in tickets
-                    ],
-                    "total_spent": len(tickets) * TICKET_PRICE
-                })
+            for user_id, tickets in participants_with_tickets.items():
+                if user_id not in winning_user_ids:
+                    user = self.bot.get_user(user_id)
+                    entry["non_winners"].append({
+                        "user_id": user_id,
+                        "username": user.name if user else str(user_id),
+                        "tickets_purchased": len(tickets),
+                        "tickets": tickets,
+                        "total_spent": len(tickets) * TICKET_PRICE
+                    })
 
             existing_logs = []
             if log_file.exists():
@@ -320,8 +383,13 @@ class MegaMillions(commands.Cog):
         self.drawing_time = next_draw
         self.save_lottery_data()
 
+    async def cog_load(self):
+        self._reset_drawing_time()
+        # self.daily_drawing.start()
+        print("Lottery Cog Loaded")
+
     async def cog_unload(self):
-        self.daily_drawing.cancel()
+        print("Lottery Cog Unloaded")
 
     @tasks.loop(minutes=1)
     async def daily_drawing(self):
@@ -336,9 +404,19 @@ class MegaMillions(commands.Cog):
             await self._announce_no_winners()
             return
 
+        participants_with_tickets = {
+            user_id: await self.get_member_tickets(user_id)
+            for user_id in all_participants
+        }
+
         winners = await self._evaluate_tickets()
         payouts = await self._distribute_prizes(winners)
-        await self._log_drawing_results(winners, all_participants)
+
+        await self._log_drawing_results(winners, participants_with_tickets)
+
+        for user_id in all_participants:
+            await self._clear_member_tickets(user_id)
+
         await self._reset_after_drawing(payouts)
 
     def _generate_winning_numbers(self) -> Tuple[List[int], int]:
@@ -452,7 +530,7 @@ class MegaMillions(commands.Cog):
         self._update_pot()
 
     def _update_pot(self):
-        self.current_pot += TICKET_PRICE * self.pot_multiplier
+        self.current_pot += TICKET_PRICE * POT_MULTIPLIER
         self.save_lottery_data()
 
     async def save_member_tickets(self, user_id: int, tickets: List[dict]):
@@ -522,23 +600,21 @@ class MegaMillions(commands.Cog):
 
         embed.add_field(
             name="💰 Current Jackpot",
-            value=f"{self.current_pot:,} coins",
+            value=f"{self.current_pot:,} coins\nCurrent Multiplier: {POT_MULTIPLIER}x Ticket Value",
             inline=False
         )
 
+        # Button explanations
         embed.add_field(
-            name="🏆 Prize Breakdown",
+            name="🎫 Ticket Options",
             value=(
-                "5+PB: JACKPOT (100%)\n"
-                "5: 50% of pot\n"
-                "4+PB: 40%\n"
-                "4: 30%\n"
-                "3+PB: 25%\n"
-                "3: 20%\n"
-                "2+PB: 15%\n"
-                "1+PB: 10%"
+                "• **Quick Pick**: Randomly generated numbers\n"
+                "• **Purchase Ticket**: Choose your own numbers\n"
+                "• **My Tickets**: View/delete your tickets\n"
+                "• **Show Odds**: See winning probabilities\n\n"
+                "  *The house will match you Ticket Price x Multiplier*"
             ),
-            inline=True
+            inline=False
         )
 
         ticket_count = len(await self.get_member_tickets(user_id))
@@ -551,8 +627,10 @@ class MegaMillions(commands.Cog):
         embed.add_field(
             name="⏰ Next Drawing",
             value=f"<t:{int(self.drawing_time.timestamp())}:R>",
-            inline=False
+            inline=True
         )
+
+        embed.set_footer(text=f"Ticket price: {TICKET_PRICE} coins each")
 
         if hasattr(self, 'winning_numbers'):
             embed.add_field(
@@ -561,7 +639,6 @@ class MegaMillions(commands.Cog):
                 inline=False
             )
 
-        embed.set_footer(text=f"Ticket price: {TICKET_PRICE} coins each")
         return embed
 
     @app_commands.command(name="lottery", description="View and participate in the Mega Millions lottery")
@@ -575,19 +652,20 @@ class MegaMillions(commands.Cog):
         try:
             nums = [int(n.strip()) for n in numbers.split(",")]
             pb = int(powerball)
+            user_id = interaction.user.id
+            user_balance = self.economy.get_balance(user_id)
 
             if (len(nums) != 5 or any(n < 1 or n > 70 for n in nums) or
                     not 1 <= pb <= 25):
                 raise ValueError
 
-            user_id = interaction.user.id
             if len(await self.get_member_tickets(user_id)) >= MAX_TICKETS_PER_USER:
                 return await interaction.response.send_message(
                     f"You've reached the limit of {MAX_TICKETS_PER_USER} tickets!",
                     ephemeral=True
                 )
 
-            if self.economy.get_balance(user_id) < TICKET_PRICE:
+            if user_balance < TICKET_PRICE:
                 return await interaction.response.send_message(
                     f"You need {TICKET_PRICE} coins to buy a ticket!",
                     ephemeral=True
@@ -604,12 +682,12 @@ class MegaMillions(commands.Cog):
 
             embed = discord.Embed(
                 title="🎫 Ticket Purchased!",
-                description=f"Added {TICKET_PRICE * self.pot_multiplier} coins to the pot",
+                description=f"Added {TICKET_PRICE * POT_MULTIPLIER} coins to the pot",
                 color=discord.Color.green()
             )
             embed.add_field(
                 name="Your Numbers",
-                value=f"{', '.join(map(str, new_ticket['numbers']))} PB: {new_ticket['powerball']}"
+                value=f"{', '.join(map(str, new_ticket['numbers']))} PB: {new_ticket['powerball']}\n\nYour Balance: {user_balance}"
             )
             embed.set_footer(text=f"New pot total: {self.current_pot:,} coins")
 
